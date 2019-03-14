@@ -39,43 +39,23 @@
  */
 /** @file
  *
- * @defgroup ble_sdk_app_template_main main.c
+ * @defgroup ble_sdk_app_beacon_main main.c
  * @{
- * @ingroup ble_sdk_app_template
- * @brief Template project main file.
+ * @ingroup ble_sdk_app_beacon
+ * @brief Beacon Transmitter Sample Application main file.
  *
- * This file contains a template for creating a new application. It has the code necessary to wakeup
- * from button, advertise, get a connection restart advertising on disconnect and if no new
- * connection created go back to system-off mode.
- * It can easily be used as a starting point for creating a new application, the comments identified
- * with 'YOUR_JOB' indicates where and how you can customize.
+ * This file contains the source code for an Beacon transmitter sample application.
  */
 
 #include <stdbool.h>
 #include <stdint.h>
-#include <string.h>
-#include <math.h>
-
 #include "nordic_common.h"
-#include "nrf.h"
-#include "app_error.h"
-#include "ble.h"
-#include "ble_hci.h"
-#include "ble_srv_common.h"
-#include "ble_advdata.h"
-#include "ble_advertising.h"
-#include "ble_conn_params.h"
+#include "bsp.h"
+#include "nrf_soc.h"
 #include "nrf_sdh.h"
-#include "nrf_sdh_soc.h"
 #include "nrf_sdh_ble.h"
+#include "ble_advdata.h"
 #include "app_timer.h"
-#include "fds.h"
-#include "peer_manager.h"
-#include "bsp_btn_ble.h"
-#include "sensorsim.h"
-#include "ble_conn_state.h"
-#include "nrf_ble_gatt.h"
-#include "nrf_ble_qwr.h"
 #include "nrf_pwr_mgmt.h"
 
 #include "nrf_log.h"
@@ -83,29 +63,24 @@
 #include "nrf_log_default_backends.h"
 
 
-#define DEVICE_NAME                     "HelloWorld"                            /**< Name of device. Will be included in the advertising data. */
-#define APP_ADV_INTERVAL                300                                     /**< The advertising interval (in units of 0.625 ms. This value corresponds to 187.5 ms). */
+#define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
-#define APP_ADV_DURATION                0                                   /**< The advertising duration (180 seconds) in units of 10 milliseconds. */
-#define APP_BLE_OBSERVER_PRIO           3                                       /**< Application's BLE observer priority. You shouldn't need to modify this value. */
-#define APP_BLE_CONN_CFG_TAG            1                                       /**< A tag identifying the SoftDevice BLE configuration. */
+#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(300, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
 
-#define FIRST_CONN_PARAMS_UPDATE_DELAY  APP_TIMER_TICKS(5000)                   /**< Time from initiating event (connect or start of notification) to first time sd_ble_gap_conn_param_update is called (5 seconds). */
-#define NEXT_CONN_PARAMS_UPDATE_DELAY   APP_TIMER_TICKS(30000)                  /**< Time between each call to sd_ble_gap_conn_param_update after the first call (30 seconds). */
-#define MAX_CONN_PARAMS_UPDATE_COUNT    3                                       /**< Number of attempts before giving up the connection parameter negotiation. */
+#define APP_COMPANY_IDENTIFIER          0x0059                             /**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
 
-#define DEAD_BEEF                       0xDEADBEEF                              /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
+#define DEAD_BEEF                       0xDEADBEEF                         /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
 
+#if defined(USE_UICR_FOR_MAJ_MIN_VALUES)
+#define MAJ_VAL_OFFSET_IN_BEACON_INFO   18                                 /**< Position of the MSB of the Major Value in m_beacon_info array. */
+#define UICR_ADDRESS                    0x10001080                         /**< Address of the UICR register used by this example. The major and minor versions to be encoded into the advertising data will be picked up from this location. */
+#endif
 
-NRF_BLE_GATT_DEF(m_gatt);                                                       /**< GATT module instance. */
-NRF_BLE_QWR_DEF(m_qwr);                                                         /**< Context for the Queued Write module.*/
-BLE_ADVERTISING_DEF(m_advertising);                                             /**< Advertising module instance. */
+static ble_gap_adv_params_t m_adv_params;                                  /**< Parameters to be passed to the stack when starting advertising. */
+static uint8_t              m_adv_handle = BLE_GAP_ADV_SET_HANDLE_NOT_SET; /**< Advertising handle used to identify an advertising set. */
+static uint8_t              m_enc_advdata[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
 
-static uint16_t m_conn_handle = BLE_CONN_HANDLE_INVALID;                        /**< Handle of the current connection. */
-
-static void advertising_start();
-static void advertising_init_ext(void);
-static void restarter_timer_handler(void * p_context);
+/*Customized Data Generating*/
 APP_TIMER_DEF(restarter_timer);// Timer for restarting advertisement
 APP_TIMER_DEF(btn_state_timer);// Timer for reversing the button press state
 uint8_t newdata[3];// register
@@ -124,7 +99,6 @@ void generateRandomNumber(void)
     // rand() % (a-b+1) + b
     int dataNum = rand() % 900 + 100;
 
-    //NRF_LOG_INFO("Random number i is %d", dataNum);
     uint8_t data[3];
     
     data[0] = dataNum/100;
@@ -222,6 +196,27 @@ void ble_tag_test(void)
     body_temp_update(365);
 }
 
+
+
+/*Customized Data Generating*/
+
+/**@brief Struct that contains pointers to the encoded advertising data. */
+static ble_gap_adv_data_t m_adv_data =
+{
+    .adv_data =
+    {
+        .p_data = m_enc_advdata,
+        .len    = BLE_GAP_ADV_SET_DATA_SIZE_MAX
+    },
+    .scan_rsp_data =
+    {
+        .p_data = NULL,
+        .len    = 0
+
+    }
+};
+
+
 /**@brief Callback function for asserts in the SoftDevice.
  *
  * @details This function will be called in case of an assert in the SoftDevice.
@@ -230,246 +225,69 @@ void ble_tag_test(void)
  *          how your product is supposed to react in case of Assert.
  * @warning On assert from the SoftDevice, the system can only recover on reset.
  *
- * @param[in] line_num   Line number of the failing ASSERT call.
- * @param[in] file_name  File name of the failing ASSERT call.
+ * @param[in]   line_num   Line number of the failing ASSERT call.
+ * @param[in]   file_name  File name of the failing ASSERT call.
  */
 void assert_nrf_callback(uint16_t line_num, const uint8_t * p_file_name)
 {
     app_error_handler(DEAD_BEEF, line_num, p_file_name);
 }
 
-
-/**@brief Function for handling Peer Manager events.
+/**@brief Function for initializing the Advertising functionality.
  *
- * @param[in] p_evt  Peer Manager event.
+ * @details Encodes the required advertising data and passes it to the stack.
+ *          Also builds a structure to be passed to the stack when starting advertising.
  */
-static void pm_evt_handler(pm_evt_t const * p_evt)
+static void advertising_init(void)
+{
+    uint32_t      err_code;
+    ble_advdata_t advdata;
+    int8_t tx_power_level = -40;// -40, -20, -16, -12, -8, -4, 0, 4 (dbm)
+    uint8_t       flags = BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
+
+    ble_advdata_manuf_data_t manuf_specific_data;
+
+    manuf_specific_data.company_identifier = APP_COMPANY_IDENTIFIER;
+
+    data_ary_append(); // Build the data array
+    manuf_specific_data.data.p_data = FIN_DATA;
+    manuf_specific_data.data.size   = sizeof(FIN_DATA);
+
+    // Build and set advertising data.
+    memset(&advdata, 0, sizeof(advdata));
+
+    advdata.name_type             = BLE_ADVDATA_NO_NAME;
+    advdata.flags                 = flags;
+    advdata.p_manuf_specific_data = &manuf_specific_data;
+
+    // Initialize advertising parameters (used when starting advertising).
+    memset(&m_adv_params, 0, sizeof(m_adv_params));
+
+    m_adv_params.properties.type = BLE_GAP_ADV_TYPE_NONCONNECTABLE_NONSCANNABLE_UNDIRECTED;
+    m_adv_params.p_peer_addr     = NULL;    // Undirected advertisement.
+    m_adv_params.filter_policy   = BLE_GAP_ADV_FP_ANY;
+    m_adv_params.interval        = NON_CONNECTABLE_ADV_INTERVAL;
+    m_adv_params.duration        = 0;       // Never time out.
+
+    err_code = ble_advdata_encode(&advdata, m_adv_data.adv_data.p_data, &m_adv_data.adv_data.len);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data, &m_adv_params);
+    APP_ERROR_CHECK(err_code);
+}
+
+
+/**@brief Function for starting advertising.
+ */
+static void advertising_start(void)
 {
     ret_code_t err_code;
 
-    switch (p_evt->evt_id)
-    {
-        case PM_EVT_BONDED_PEER_CONNECTED:
-        {
-            //NRF_LOG_INFO("Connected to a previously bonded device.");
-        } break;
-
-        case PM_EVT_CONN_SEC_SUCCEEDED:
-        {
-            /*NRF_LOG_INFO("Connection secured: role: %d, conn_handle: 0x%x, procedure: %d.",
-                         ble_conn_state_role(p_evt->conn_handle),
-                         p_evt->conn_handle,
-                         p_evt->params.conn_sec_succeeded.procedure);
-            */
-        } break;
-
-        case PM_EVT_CONN_SEC_FAILED:
-        {
-            /* Often, when securing fails, it shouldn't be restarted, for security reasons.
-             * Other times, it can be restarted directly.
-             * Sometimes it can be restarted, but only after changing some Security Parameters.
-             * Sometimes, it cannot be restarted until the link is disconnected and reconnected.
-             * Sometimes it is impossible, to secure the link, or the peer device does not support it.
-             * How to handle this error is highly application dependent. */
-        } break;
-
-        case PM_EVT_CONN_SEC_CONFIG_REQ:
-        {
-            // Reject pairing request from an already bonded peer.
-            pm_conn_sec_config_t conn_sec_config = {.allow_repairing = false};
-            pm_conn_sec_config_reply(p_evt->conn_handle, &conn_sec_config);
-        } break;
-
-        case PM_EVT_STORAGE_FULL:
-        {
-            // Run garbage collection on the flash.
-            err_code = fds_gc();
-            if (err_code == FDS_ERR_NO_SPACE_IN_QUEUES)
-            {
-                // Retry.
-            }
-            else
-            {
-                APP_ERROR_CHECK(err_code);
-            }
-        } break;
-
-        case PM_EVT_PEERS_DELETE_SUCCEEDED:
-        {
-            advertising_start(false);
-        } break;
-
-        case PM_EVT_PEER_DATA_UPDATE_FAILED:
-        {
-            // Assert.
-            APP_ERROR_CHECK(p_evt->params.peer_data_update_failed.error);
-        } break;
-
-        case PM_EVT_PEER_DELETE_FAILED:
-        {
-            // Assert.
-            APP_ERROR_CHECK(p_evt->params.peer_delete_failed.error);
-        } break;
-
-        case PM_EVT_PEERS_DELETE_FAILED:
-        {
-            // Assert.
-            APP_ERROR_CHECK(p_evt->params.peers_delete_failed_evt.error);
-        } break;
-
-        case PM_EVT_ERROR_UNEXPECTED:
-        {
-            // Assert.
-            APP_ERROR_CHECK(p_evt->params.error_unexpected.error);
-        } break;
-
-        case PM_EVT_CONN_SEC_START:
-        case PM_EVT_PEER_DATA_UPDATE_SUCCEEDED:
-        case PM_EVT_PEER_DELETE_SUCCEEDED:
-        case PM_EVT_LOCAL_DB_CACHE_APPLIED:
-        case PM_EVT_LOCAL_DB_CACHE_APPLY_FAILED:
-            // This can happen when the local DB has changed.
-        case PM_EVT_SERVICE_CHANGED_IND_SENT:
-        case PM_EVT_SERVICE_CHANGED_IND_CONFIRMED:
-        default:
-            break;
-    }
-}
-
-// Handler for advertisement restart
-static void restarter_timer_handler(void * p_context)
-{
-    UNUSED_PARAMETER(p_context);
-    
-    // STOP
-    sd_ble_gap_adv_stop(NULL);
-    // UPDATE
-    ble_tag_test();
-    advertising_init_ext();
-    // RESUME
-    advertising_start(false);
-}
-
-// Handler for reversing the button state
-static void btn_state_handler(void * p_context)
-{   
-    UNUSED_PARAMETER(p_context);
-    btn_state_update(0);
-    LEDS_INVERT(BSP_LED_2_MASK);
-}
-
-/**@brief Function for the Timer initialization.
- *
- * @details Initializes the timer module. This creates and starts application timers.
- */
-static void timers_init(void)
-{
-    // Initialize timer module.
-    ret_code_t err_code = app_timer_init();
+    err_code = sd_ble_gap_adv_start(m_adv_handle, APP_BLE_CONN_CFG_TAG);
     APP_ERROR_CHECK(err_code);
 
-    // Create a timer for restarting the advertisement
-    err_code = app_timer_create(&restarter_timer, APP_TIMER_MODE_REPEATED, restarter_timer_handler);
-    //NRF_LOG_INFO("app_timer_create restart_timer=%s\r\n", nrf_strerror_get(err_code));
+    err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
     APP_ERROR_CHECK(err_code);
-
-    // Create a timer for handling button state, will reverse the btn_state back to normal
-    err_code = app_timer_create(&btn_state_timer, APP_TIMER_MODE_SINGLE_SHOT, btn_state_handler);
-    //NRF_LOG_INFO("app_timer_create btn_state_timer=%s\r\n", nrf_strerror_get(err_code));
-    APP_ERROR_CHECK(err_code);
-}
-
-
-
-/**@brief Function for initializing the GATT module.
- */
-static void gatt_init(void)
-{
-    ret_code_t err_code = nrf_ble_gatt_init(&m_gatt, NULL);
-    APP_ERROR_CHECK(err_code);
-}
-
-
-/**@brief Function for handling Queued Write Module errors.
- *
- * @details A pointer to this function will be passed to each service which may need to inform the
- *          application about an error.
- *
- * @param[in]   nrf_error   Error code containing information about what went wrong.
- */
-static void nrf_qwr_error_handler(uint32_t nrf_error)
-{
-    APP_ERROR_HANDLER(nrf_error);
-}
-
-
-
-/**@brief Function for initializing services that will be used by the application.
- */
-static void services_init(void)
-{
-    ret_code_t         err_code;
-    nrf_ble_qwr_init_t qwr_init = {0};
-
-    // Initialize Queued Write Module.
-    qwr_init.error_handler = nrf_qwr_error_handler;
-
-    err_code = nrf_ble_qwr_init(&m_qwr, &qwr_init);
-    APP_ERROR_CHECK(err_code);
-
-}
-
-
-/**@brief Function for handling advertising events.
- *
- * @details This function will be called for advertising events which are passed to the application.
- *
- * @param[in] ble_adv_evt  Advertising event.
- */
-static void on_adv_evt(ble_adv_evt_t ble_adv_evt)
-{
-    ret_code_t err_code;
-
-    switch (ble_adv_evt)
-    {
-        case BLE_ADV_EVT_FAST:
-            //NRF_LOG_INFO("Fast advertising.");
-            err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
-            //printf("fast adv=%s\r\n", nrf_strerror_get(err_code));
-            APP_ERROR_CHECK(err_code);
-            break;
-
-        /*case BLE_ADV_EVT_IDLE:
-            sleep_mode_enter();
-            break;
-            */
-
-        default:
-            break;
-    }
-}
-
-
-/**@brief Function for handling BLE events.
- *
- * @param[in]   p_ble_evt   Bluetooth stack event.
- * @param[in]   p_context   Unused.
- */
-static void ble_evt_handler(ble_evt_t const * p_ble_evt, void * p_context)
-{
-    ret_code_t err_code = NRF_SUCCESS;
-
-    switch (p_ble_evt->header.evt_id)
-    {
-        case BLE_GAP_EVT_DISCONNECTED:
-            //NRF_LOG_INFO("Disconnected.");
-            // LED indication will be changed when advertising starts.
-            break;
-
-        default:
-            // No implementation needed.
-            break;
-    }
 }
 
 
@@ -493,26 +311,7 @@ static void ble_stack_init(void)
     // Enable BLE stack.
     err_code = nrf_sdh_ble_enable(&ram_start);
     APP_ERROR_CHECK(err_code);
-
-    // Register a handler for BLE events.
-    NRF_SDH_BLE_OBSERVER(m_ble_observer, APP_BLE_OBSERVER_PRIO, ble_evt_handler, NULL);
 }
-
-
-
-/**@brief Clear bond information from persistent storage.
- */
-static void delete_bonds(void)
-{
-    ret_code_t err_code;
-
-    //NRF_LOG_INFO("Erase bonds!");
-
-    err_code = pm_peers_delete();
-    //printf("erase bonds=%s\r\n", nrf_strerror_get(err_code));
-    APP_ERROR_CHECK(err_code);
-}
-
 
 /**@brief Function for handling events from the BSP module.
  *
@@ -526,17 +325,15 @@ static void bsp_event_handler(bsp_event_t event)
     {
         
         case BSP_EVENT_KEY_0:
-            //NRF_LOG_INFO("Button 0 pushed.");
             LEDS_INVERT(BSP_LED_2_MASK);
             // Change button to "pressed"
             btn_state_update(1);
             sd_ble_gap_adv_stop(NULL);// Stop the advertising first
-            advertising_init_ext();// Refresh the advertising data, but not yet broadcasted
-            advertising_start(false);// Resume the advertising action
+            advertising_init();// Refresh the advertising data, but not yet broadcasted
+            advertising_start();// Resume the advertising action
 
             // Timer for inverting button state
             err_code = app_timer_start(btn_state_timer, APP_TIMER_TICKS(5000), NULL);
-            //NRF_LOG_INFO("app_timer_start btn_state=%s\r\n", nrf_strerror_get(err_code));
             APP_ERROR_CHECK(err_code);
             break;
 
@@ -547,69 +344,57 @@ static void bsp_event_handler(bsp_event_t event)
     APP_ERROR_CHECK(err_code);
 }
 
-
-/**@brief Function for initializing the Advertising functionality.
- */
-static void advertising_init(void)
-{
-    ret_code_t             err_code;
-    ble_advertising_init_t init;  // Struct containing advertising parameters
-    // Build advertising data struct to pass into @ref ble_advertising_init.
-    int8_t tx_power_level = -40;// -40, -20, -16, -12, -8, -4, 0, 4 (dbm)
-    memset(&init, 0, sizeof(init));
-
-    
-    ble_advdata_manuf_data_t                  manuf_data; //Variable to hold manufacturer specific data
-    manuf_data.company_identifier             = 0x0059; //Nordics company ID
-    // Build data array
-    data_ary_append();
-    manuf_data.data.p_data                    = FIN_DATA;
-    manuf_data.data.size                      = sizeof(FIN_DATA);
-    init.advdata.p_tx_power_level             = &tx_power_level;
-    init.advdata.p_manuf_specific_data = &manuf_data;
-
-    init.advdata.name_type = BLE_ADVDATA_NO_NAME; // Use a shortened name
-    init.advdata.flags                   = BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE;
-
-    init.config.ble_adv_fast_enabled  = true;
-    init.config.ble_adv_fast_interval = APP_ADV_INTERVAL;
-    init.config.ble_adv_fast_timeout  = APP_ADV_DURATION;
-
-    init.evt_handler = on_adv_evt;
-
-    err_code = ble_advertising_init(&m_advertising, &init);
-    //NRF_LOG_INFO("advertising init ext=%s\r\n", nrf_strerror_get(err_code));
-    APP_ERROR_CHECK(err_code);
-
-    ble_advertising_conn_cfg_tag_set(&m_advertising, APP_BLE_CONN_CFG_TAG);
-}
-
-
-
-/**@brief Function for initializing buttons and leds.
- *
- * @param[out] p_erase_bonds  Will be true if the clear bonding button was pressed to wake the application up.
- */
-static void buttons_leds_init()
-{
-    ret_code_t err_code;
-    bsp_event_t startup_event;
-    
-    LEDS_CONFIGURE(LEDS_MASK);
-
-    err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, bsp_event_handler);
-    APP_ERROR_CHECK(err_code);
-}
-
-
-/**@brief Function for initializing the nrf log module.
- */
+/**@brief Function for initializing logging. */
 static void log_init(void)
 {
     ret_code_t err_code = NRF_LOG_INIT(NULL);
     APP_ERROR_CHECK(err_code);
 
     NRF_LOG_DEFAULT_BACKENDS_INIT();
+}
+
+/**@brief Function for initializing LEDs. */
+static void leds_init(void)
+{
+    ret_code_t err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, bsp_event_handler);
+    APP_ERROR_CHECK(err_code);
+}
+
+// Handler for advertisement restart
+static void restarter_timer_handler(void * p_context)
+{
+    UNUSED_PARAMETER(p_context);
+    
+    // STOP
+    sd_ble_gap_adv_stop(NULL);
+    // UPDATE
+    ble_tag_test();
+    advertising_init();
+    // RESUME
+    advertising_start();
+}
+
+// Handler for reversing the button state
+static void btn_state_handler(void * p_context)
+{   
+    UNUSED_PARAMETER(p_context);
+    btn_state_update(0);
+    LEDS_INVERT(BSP_LED_2_MASK);
+}
+
+/**@brief Function for initializing timers. */
+static void timers_init(void)
+{
+    ret_code_t err_code = app_timer_init();
+    APP_ERROR_CHECK(err_code);
+
+    // Create a timer for restarting the advertisement
+    err_code = app_timer_create(&restarter_timer, APP_TIMER_MODE_REPEATED, restarter_timer_handler);
+    APP_ERROR_CHECK(err_code);
+
+    // Create a timer for handling button state, will reverse the btn_state back to normal
+    err_code = app_timer_create(&btn_state_timer, APP_TIMER_MODE_SINGLE_SHOT, btn_state_handler);
+    APP_ERROR_CHECK(err_code);
 }
 
 
@@ -636,17 +421,6 @@ static void idle_state_handle(void)
 }
 
 
-/**@brief Function for starting advertising.
- */
-static void advertising_start()
-{
-    ret_code_t err_code = ble_advertising_start(&m_advertising, BLE_ADV_MODE_FAST);
-    //printf("advertising start=%s\r\n", nrf_strerror_get(err_code));
-    APP_ERROR_CHECK(err_code);
-}
-
-
-
 void ble_mac_addr_modify(bool change)
 {
     ret_code_t err_code;
@@ -659,14 +433,13 @@ void ble_mac_addr_modify(bool change)
     addr.addr[1]       = 0xff;
     addr.addr[2]       = 0xff;
     addr.addr[3]       = 0xff;
-    addr.addr[4]       = 0x00;
+    addr.addr[4]       = 0xcc;
     addr.addr[5]       = 0xdf; // 2MSB must be set 11
     err_code = sd_ble_gap_addr_set(&addr);
     APP_ERROR_CHECK(err_code);
 
     // Use sd_ble_gap_addr_get() for NRF_SD_BLE_API_VERSION=3
     err_code = sd_ble_gap_addr_get(&addr);
-    //NRF_LOG_INFO("modify mac address=%s\r\n", nrf_strerror_get(err_code));
     APP_ERROR_CHECK(err_code);
 
    // NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",
@@ -682,39 +455,49 @@ static void application_timers_start(void)
 
     // Timer for refreshing the packet data
     err_code = app_timer_start(restarter_timer, APP_TIMER_TICKS(1000), NULL);
-    //printf("app_timer_start restart_timer=%s\r\n", nrf_strerror_get(err_code));
     APP_ERROR_CHECK(err_code);
 }
 
 
+static void set_tx_power()
+{
+    ret_code_t err_code;
 
-/**@brief Function for application main entry.
+    // Accepted values are -40, -20, -16, -12, -8, -4, 0, 4 (dbm)
+    err_code = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, NULL, -20);
+    APP_ERROR_CHECK(err_code);
+}
+
+
+/**
+ * @brief Function for application main entry.
  */
 int main(void)
 {
-    //bool erase_bonds;
-
     // Initialize.
-    //log_init();
+    log_init();
     timers_init();
-    buttons_leds_init();
+    leds_init();
     power_management_init();
     ble_stack_init();
-    gatt_init();
     ble_mac_addr_modify(true);
     ble_tag_test();
-    advertising_init_ext();
-    services_init();
+    advertising_init();
+    set_tx_power();
 
     // Start execution.
-    //NRF_LOG_INFO("Ble tutorial started.");
-    //printf("Started~");
+    NRF_LOG_INFO("Beacon example started.");
     application_timers_start();
     advertising_start();
 
     // Enter main loop.
-    for (;;)
+    for (;; )
     {
         idle_state_handle();
     }
 }
+
+
+/**
+ * @}
+ */
