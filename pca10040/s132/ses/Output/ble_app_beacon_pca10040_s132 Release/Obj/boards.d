@@ -49,4 +49,4 @@ Output/ble_app_beacon_pca10040_s132\ Release/Obj/boards.o: \
  ../../../../../../components/libraries/util/sdk_resources.h \
  ../../../../../../components/softdevice/s132/headers/nrf_sd_def.h \
  ../../../../../../modules/nrfx/drivers/nrfx_errors.h \
- C:\nRF5_SDK_15.0.0_a53641a\components\boards\pca10040.h
+ C:\nRF5_SDK_15.0.0_a53641a\components\boards\pca10040_tag288.h

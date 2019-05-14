@@ -1,5 +1,5 @@
 Output/ble_app_beacon_pca10040_s132\ Release/Obj/main.o: \
- C:\nRF5_SDK_15.0.0_a53641a\examples\ble_peripheral\ble_app_beacon_tag\main.c \
+ C:\nRF5_SDK_15.0.0_a53641a\examples\ble_peripheral\ble_app_beacon_tag_radioland_fin_packet_w_UUID\main.c \
  C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ for\ ARM\ 4.12/include/stdbool.h \
  C:/Program\ Files/SEGGER/SEGGER\ Embedded\ Studio\ for\ ARM\ 4.12/include/stdint.h \
  ../../../../../../components/libraries/util/nordic_common.h \
@@ -50,7 +50,7 @@ Output/ble_app_beacon_pca10040_s132\ Release/Obj/main.o: \
  ../../../../../../components/libraries/util/sdk_resources.h \
  ../../../../../../components/softdevice/s132/headers/nrf_sd_def.h \
  ../../../../../../modules/nrfx/drivers/nrfx_errors.h \
- ../../../../../../components/boards/pca10040.h \
+ ../../../../../../components/boards/pca10040_tag288.h \
  ../../../../../../components/libraries/button/app_button.h \
  ../../../../../../components/libraries/util/app_error.h \
  ../../../../../../components/softdevice/common/nrf_sdh.h \

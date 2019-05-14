@@ -65,89 +65,22 @@
 
 #define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
-#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(300, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
+#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(240, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
 
 #define APP_COMPANY_IDENTIFIER          0x0059                             /**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
 
 #define DEAD_BEEF                       0xDEADBEEF                         /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
-
-#if defined(USE_UICR_FOR_MAJ_MIN_VALUES)
-#define MAJ_VAL_OFFSET_IN_BEACON_INFO   18                                 /**< Position of the MSB of the Major Value in m_beacon_info array. */
-#define UICR_ADDRESS                    0x10001080                         /**< Address of the UICR register used by this example. The major and minor versions to be encoded into the advertising data will be picked up from this location. */
-#endif
 
 static ble_gap_adv_params_t m_adv_params;                                  /**< Parameters to be passed to the stack when starting advertising. */
 static uint8_t              m_adv_handle = BLE_GAP_ADV_SET_HANDLE_NOT_SET; /**< Advertising handle used to identify an advertising set. */
 static uint8_t              m_enc_advdata[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< Buffer for storing an encoded advertising set. */
 
 /*Customized Data Generating*/
-APP_TIMER_DEF(restarter_timer);// Timer for restarting advertisement
 APP_TIMER_DEF(btn_state_timer);// Timer for reversing the button press state
 uint8_t newdata[3];// register
 
-uint8_t BPS_DIA[3];// Blood pressure - diastolic(mmHg), normally less then 80
-uint8_t BPS_SYS[3];// Blood pressure - systolic(mmHg), normally less then 120
-uint8_t PULSE[3];// Pulse(bpm), average 73
-uint8_t BODY_TEMP[3];// Body temperature(*10 degree celsius), normally 365
 uint8_t BTN_PRS[1];// Button press indication, idle=0, pressed=1
-uint8_t FIN_DATA[13];// Overall data packet ready to send
-
-// Generates random 3-digit number for testing purpose
-void generateRandomNumber(void)
-{
-    // from 999 to 100, set a=999, b=100
-    // rand() % (a-b+1) + b
-    int dataNum = rand() % 900 + 100;
-
-    uint8_t data[3];
-    
-    data[0] = dataNum/100;
-    data[1] = (dataNum/10)%10;
-    data[2] = dataNum%10;
-
-    memcpy(newdata, data, sizeof(newdata));
-}
-
-void bps_dia_update(int newValue)
-{
-    uint8_t data[3];
-    data[0] = newValue/100;
-    data[1] = (newValue/10)%10;
-    data[2] = newValue%10;
-    
-    memcpy(BPS_DIA, data, sizeof(BPS_DIA));
-}
-
-void bps_sys_update(int newValue)
-{
-    uint8_t data[3];
-    data[0] = newValue/100;
-    data[1] = (newValue/10)%10;
-    data[2] = newValue%10;
-    
-    memcpy(BPS_SYS, data, sizeof(BPS_SYS));
-}
-
-void pulse_update(int newValue)
-{
-    uint8_t data[3];
-    data[0] = newValue/100;
-    data[1] = (newValue/10)%10;
-    data[2] = newValue%10;
-    
-    memcpy(PULSE, data, sizeof(PULSE));
-}
-
-void body_temp_update(int newValue)
-{
-    uint8_t data[3];
-    data[0] = newValue/100;
-    data[1] = (newValue/10)%10;
-    data[2] = newValue%10;
-    
-    memcpy(BODY_TEMP, data, sizeof(BODY_TEMP));
-}
-
+uint8_t FIN_DATA[9];// Overall data packet ready to send
 
 void btn_state_update(int newValue)
 {
@@ -159,13 +92,13 @@ void btn_state_update(int newValue)
 
 void data_ary_append(void)
 {
-    uint8_t* total = malloc(13 * sizeof(uint8_t));
+    uint8_t* total = malloc(9 * sizeof(char));
 
-    memcpy(total,       BPS_DIA,    3 * sizeof(BPS_DIA));
-    memcpy(total + 3,   BPS_SYS,    3 * sizeof(BPS_SYS));
-    memcpy(total + 6,   PULSE,      3 * sizeof(PULSE));
-    memcpy(total + 9,   BODY_TEMP,  3 * sizeof(BODY_TEMP));
-    memcpy(total + 12,  BTN_PRS,    1 * sizeof(BTN_PRS));
+    uint8_t UUID_ADV[8];
+    memset(UUID_ADV, 0, sizeof UUID_ADV);
+    
+    memcpy(total,       UUID_ADV,    8 * sizeof(UUID_ADV));
+    memcpy(total + 8,   BTN_PRS,     1 * sizeof(BTN_PRS));
 
     memcpy(FIN_DATA, total, sizeof(FIN_DATA));
     free(total);
@@ -178,22 +111,6 @@ void data_ary_append(void)
     NRF_LOG_INFO("BODY_TEMP=%d%d%d\r",  BODY_TEMP[0], BODY_TEMP[1], BODY_TEMP[2]);
     NRF_LOG_INFO("BTN_PRS=%d\r",        BTN_PRS[0]);
     */
-}
-
-void ble_tag_test(void)
-{
-    // Generate random numbers for demo
-    int random_bps_dia = rand() % 11 + 70;// 80~70
-    int random_bps_sys = rand() % 21 + 100;// 120~100
-    int random_pulse = rand() % 4 + 70;// 73~70
-
-    // update bood pressure values
-    bps_dia_update(random_bps_dia);
-    bps_sys_update(random_bps_sys);
-    // update pulse value
-    pulse_update(random_pulse);
-    // update body temperature value
-    body_temp_update(365);
 }
 
 
@@ -242,7 +159,6 @@ static void advertising_init(void)
 {
     uint32_t      err_code;
     ble_advdata_t advdata;
-    int8_t tx_power_level = -40;// -40, -20, -16, -12, -8, -4, 0, 4 (dbm)
     uint8_t       flags = BLE_GAP_ADV_FLAG_BR_EDR_NOT_SUPPORTED;
 
     ble_advdata_manuf_data_t manuf_specific_data;
@@ -325,7 +241,7 @@ static void bsp_event_handler(bsp_event_t event)
     {
         
         case BSP_EVENT_KEY_0:
-            LEDS_INVERT(BSP_LED_2_MASK);
+            //LEDS_INVERT(BSP_LED_2_MASK);
             // Change button to "pressed"
             btn_state_update(1);
             sd_ble_gap_adv_stop(NULL);// Stop the advertising first
@@ -354,42 +270,33 @@ static void log_init(void)
 }
 
 /**@brief Function for initializing LEDs. */
-static void leds_init(void)
+static void bsps_init(void)
 {
-    ret_code_t err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, bsp_event_handler);
+    //ret_code_t err_code = bsp_init(BSP_INIT_LEDS | BSP_INIT_BUTTONS, bsp_event_handler);
+    ret_code_t err_code = bsp_init(BSP_INIT_BUTTONS, bsp_event_handler);
     APP_ERROR_CHECK(err_code);
 }
 
-// Handler for advertisement restart
-static void restarter_timer_handler(void * p_context)
-{
-    UNUSED_PARAMETER(p_context);
-    
-    // STOP
-    sd_ble_gap_adv_stop(NULL);
-    // UPDATE
-    ble_tag_test();
-    advertising_init();
-    // RESUME
-    advertising_start();
-}
 
 // Handler for reversing the button state
 static void btn_state_handler(void * p_context)
 {   
     UNUSED_PARAMETER(p_context);
     btn_state_update(0);
-    LEDS_INVERT(BSP_LED_2_MASK);
+    //LEDS_INVERT(BSP_LED_2_MASK);
+
+    // STOP
+    sd_ble_gap_adv_stop(NULL);
+    // UPDATE
+    advertising_init();
+    // RESUME
+    advertising_start();
 }
 
 /**@brief Function for initializing timers. */
 static void timers_init(void)
 {
     ret_code_t err_code = app_timer_init();
-    APP_ERROR_CHECK(err_code);
-
-    // Create a timer for restarting the advertisement
-    err_code = app_timer_create(&restarter_timer, APP_TIMER_MODE_REPEATED, restarter_timer_handler);
     APP_ERROR_CHECK(err_code);
 
     // Create a timer for handling button state, will reverse the btn_state back to normal
@@ -403,6 +310,14 @@ static void timers_init(void)
 static void power_management_init(void)
 {
     ret_code_t err_code;
+
+    // Enable DCDC to test for better power management
+    //err_code = sd_power_mode_set(NRF_POWER_DCDC_ENABLE);
+    NRF_POWER->TASKS_LOWPWR = 1;
+    NRF_POWER->DCDCEN = 1;
+    //NRF_LOG_INFO("pwr_mngmnt =%s\r\n", nrf_strerror_get(err_code));
+    APP_ERROR_CHECK(err_code);
+
     err_code = nrf_pwr_mgmt_init();
     APP_ERROR_CHECK(err_code);
 }
@@ -420,7 +335,7 @@ static void idle_state_handle(void)
     }
 }
 
-
+//
 void ble_mac_addr_modify(bool change)
 {
     ret_code_t err_code;
@@ -429,12 +344,12 @@ void ble_mac_addr_modify(bool change)
    
     addr.addr_type     = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
     // The address will display as [5]:[4]:[3]:[2]:[1]:[0]
-    addr.addr[0]       = 0xff;
-    addr.addr[1]       = 0xff;
-    addr.addr[2]       = 0xff;
-    addr.addr[3]       = 0xff;
-    addr.addr[4]       = 0xcc;
-    addr.addr[5]       = 0xdf; // 2MSB must be set 11
+    addr.addr[0]       = 0xbc;
+    addr.addr[1]       = 0x06;
+    addr.addr[2]       = 0x0c;
+    addr.addr[3]       = 0x00;
+    addr.addr[4]       = 0x0f;
+    addr.addr[5]       = 0xc1;
     err_code = sd_ble_gap_addr_set(&addr);
     APP_ERROR_CHECK(err_code);
 
@@ -448,26 +363,46 @@ void ble_mac_addr_modify(bool change)
    //                  addr.addr[1], addr.addr[0]);
 }
 
-// Starts timers
-static void application_timers_start(void)
-{
-    ret_code_t err_code;
-
-    // Timer for refreshing the packet data
-    err_code = app_timer_start(restarter_timer, APP_TIMER_TICKS(1000), NULL);
-    APP_ERROR_CHECK(err_code);
-}
-
 
 static void set_tx_power()
 {
     ret_code_t err_code;
 
     // Accepted values are -40, -20, -16, -12, -8, -4, 0, 4 (dbm)
-    err_code = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, NULL, -20);
+    err_code = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, NULL, 4);
     APP_ERROR_CHECK(err_code);
 }
 
+
+void read_mac_from_flash(bool flash)
+{
+  if(flash)
+  {
+     /*************read mac form flash**************请勿修改*/
+	uint32_t err_code;
+	ble_gap_addr_t addr;
+	err_code = sd_ble_gap_addr_get(&addr);
+    APP_ERROR_CHECK(err_code);
+	NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
+                     addr.addr[5], addr.addr[4],\
+                     addr.addr[3], addr.addr[2],\
+                     addr.addr[1], addr.addr[0]);
+	uint16_t temp[2];
+	temp[0] = ((*(uint32_t *)0x00072000) & 0x0000FFFF);
+	temp[1] = ((*(uint32_t *)0x00072020) & 0x0000FFFF);
+	addr.addr[3] = temp[0]  >> 8;
+	addr.addr[2] = temp[0] & 0xFF;
+	addr.addr[4] = temp[1] & 0xFF;
+	addr.addr[5] = 0xC1;
+	err_code = sd_ble_gap_addr_set(&addr);
+    APP_ERROR_CHECK(err_code);
+    NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
+                     addr.addr[5], addr.addr[4],\
+                     addr.addr[3], addr.addr[2],\
+                     addr.addr[1], addr.addr[0]);
+/**********************************************/
+  }
+}
 
 /**
  * @brief Function for application main entry.
@@ -477,17 +412,20 @@ int main(void)
     // Initialize.
     log_init();
     timers_init();
-    leds_init();
+    bsps_init();
     power_management_init();
     ble_stack_init();
-    ble_mac_addr_modify(true);
-    ble_tag_test();
+	
+    // Either one should be true
+    ble_mac_addr_modify(true);// For test flashing
+    read_mac_from_flash(false);// For batch flashing
+
+    
     advertising_init();
     set_tx_power();
 
     // Start execution.
     NRF_LOG_INFO("Beacon example started.");
-    application_timers_start();
     advertising_start();
 
     // Enter main loop.
