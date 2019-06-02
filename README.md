@@ -10,7 +10,7 @@ This repo was built with Nordic's nRF52 DK, running a NRF52832_XXAA CPU. Theoret
 
 We recommed you to compile this program using [Seggar Embedded Studio](https://www.segger.com/products/development-tools/embedded-studio/), which is totally free and works very well with  ARM Processors. The NRF SDK we used for building this firmware was *nRF5 SDK 15.0.0*, which can be downloaded through [here](https://developer.nordicsemi.com/nRF5_SDK/). We also strongly recommend you to follow the Getting started guide from Nordic [here](https://www.nordicsemi.com/Software-and-Tools/Development-Kits/nRF52-DK/Getting-Started), and you should be fully ready for development.
 
-Make sure you have the correct board configurations for your board. Each board's pin layout can be very different, please always check your board's pin layout for setting up correctly. The board configuration files are placed under folder BOARD_CONFIG. 
+Please also make sure you have the correct board configurations for your board. Each board's pin layout can be different depending on the manufacturer, please always check your board's pin layout for setting up correctly. The board configuration files are placed under folder BOARD_CONFIG:
 
 | Config file | Supported board |
 | ------ | ------ |
@@ -23,7 +23,7 @@ Simply place these files under the following directory from your SDK folder:
 {SDK-root-folder}/components/boards/
 ```
 
-...and remember to replace the imported config file of your project. For Segger Embedded Studio, the setting can be found inside the .emProject file from your project folder. Add a new board layout in *boards.h* and simply replace the config settings of *c_preprocessor_definitions* to connect your configuration file.
+...and remember to replace the imported config file of your project. For Segger Embedded Studio, the setting can be found inside the .emProject file from your project folder. Link the new board layout first in *boards.h* and simply replace the config settings in *c_preprocessor_definitions* to connect your configuration file.
 
 ### Installation
 
