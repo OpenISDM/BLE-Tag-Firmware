@@ -65,7 +65,7 @@
 
 #define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
-#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(240, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
+#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(1000, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
 
 #define APP_COMPANY_IDENTIFIER          0x0059                             /**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
 
@@ -241,7 +241,7 @@ static void bsp_event_handler(bsp_event_t event)
     {
         
         case BSP_EVENT_KEY_0:
-            //LEDS_INVERT(BSP_LED_2_MASK);
+            //LEDS_INVERT(BSP_LED_1);
             // Change button to "pressed"
             btn_state_update(1);
             sd_ble_gap_adv_stop(NULL);// Stop the advertising first
@@ -266,7 +266,7 @@ static void log_init(void)
     ret_code_t err_code = NRF_LOG_INIT(NULL);
     APP_ERROR_CHECK(err_code);
 
-    NRF_LOG_DEFAULT_BACKENDS_INIT();
+   // NRF_LOG_DEFAULT_BACKENDS_INIT();
 }
 
 /**@brief Function for initializing LEDs. */
@@ -283,7 +283,7 @@ static void btn_state_handler(void * p_context)
 {   
     UNUSED_PARAMETER(p_context);
     btn_state_update(0);
-    //LEDS_INVERT(BSP_LED_2_MASK);
+   // LEDS_INVERT(BSP_LED_1);
 
     // STOP
     sd_ble_gap_adv_stop(NULL);
@@ -344,9 +344,9 @@ void ble_mac_addr_modify(bool change)
    
     addr.addr_type     = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
     // The address will display as [5]:[4]:[3]:[2]:[1]:[0]
-    addr.addr[0]       = 0xbc;
-    addr.addr[1]       = 0x06;
-    addr.addr[2]       = 0x0c;
+    addr.addr[0]       = 0xf2;
+    addr.addr[1]       = 0xb5;
+    addr.addr[2]       = 0x05;
     addr.addr[3]       = 0x00;
     addr.addr[4]       = 0x0f;
     addr.addr[5]       = 0xc1;
@@ -357,10 +357,11 @@ void ble_mac_addr_modify(bool change)
     err_code = sd_ble_gap_addr_get(&addr);
     APP_ERROR_CHECK(err_code);
 
-   // NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",
-   //                  addr.addr[5], addr.addr[4],
-   //                  addr.addr[3], addr.addr[2],
-   //                  addr.addr[1], addr.addr[0]);
+    /*NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",
+                     addr.addr[5], addr.addr[4],
+                     addr.addr[3], addr.addr[2],
+                     addr.addr[1], addr.addr[0]);
+    */
 }
 
 
@@ -369,7 +370,7 @@ static void set_tx_power()
     ret_code_t err_code;
 
     // Accepted values are -40, -20, -16, -12, -8, -4, 0, 4 (dbm)
-    err_code = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, NULL, 4);
+    err_code = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, NULL, 0);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -382,11 +383,12 @@ void read_mac_from_flash(bool flash)
 	uint32_t err_code;
 	ble_gap_addr_t addr;
 	err_code = sd_ble_gap_addr_get(&addr);
-    APP_ERROR_CHECK(err_code);
-	NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
+        APP_ERROR_CHECK(err_code);
+	/*NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
                      addr.addr[5], addr.addr[4],\
                      addr.addr[3], addr.addr[2],\
                      addr.addr[1], addr.addr[0]);
+        */
 	uint16_t temp[2];
 	temp[0] = ((*(uint32_t *)0x00072000) & 0x0000FFFF);
 	temp[1] = ((*(uint32_t *)0x00072020) & 0x0000FFFF);
@@ -395,11 +397,12 @@ void read_mac_from_flash(bool flash)
 	addr.addr[4] = temp[1] & 0xFF;
 	addr.addr[5] = 0xC1;
 	err_code = sd_ble_gap_addr_set(&addr);
-    APP_ERROR_CHECK(err_code);
-    NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
+        APP_ERROR_CHECK(err_code);
+        /*NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
                      addr.addr[5], addr.addr[4],\
                      addr.addr[3], addr.addr[2],\
                      addr.addr[1], addr.addr[0]);
+        */
 /**********************************************/
   }
 }
@@ -410,7 +413,7 @@ void read_mac_from_flash(bool flash)
 int main(void)
 {
     // Initialize.
-    log_init();
+    //log_init();
     timers_init();
     bsps_init();
     power_management_init();
@@ -418,14 +421,14 @@ int main(void)
 	
     // Either one should be true
     ble_mac_addr_modify(true);// For test flashing
-    read_mac_from_flash(false);// For batch flashing
+    //read_mac_from_flash(false);// For batch flashing
 
     
     advertising_init();
     set_tx_power();
 
     // Start execution.
-    NRF_LOG_INFO("Beacon example started.");
+    //NRF_LOG_INFO("Beacon example started.");
     advertising_start();
 
     // Enter main loop.
