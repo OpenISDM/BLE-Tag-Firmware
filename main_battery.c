@@ -56,6 +56,19 @@
 #include "nrf_sdh_ble.h"
 #include "ble_advdata.h"
 #include "app_timer.h"
+#include "nrf_pwr_mgmt.h"
+
+#include "nrf_log.h"
+#include "nrf_log_ctrl.h"
+#include "nrf_log_default_backends.h"
+
+volatile int16_t result = 0;
+volatile float precise_result = 0;
+
+#define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
+
+#define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(1000, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
+
 #define APP_COMPANY_IDENTIFIER          0x0059                             /**< Company identifier for Nordic Semiconductor ASA. as per www.bluetooth.org. */
 
 #define DEAD_BEEF                       0xDEADBEEF                         /**< Value used as error code on stack dump, can be used to identify stack location on stack unwind. */
@@ -66,10 +79,14 @@ static uint8_t              m_enc_advdata[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< 
 
 /*Customized Data Generating*/
 APP_TIMER_DEF(btn_state_timer);// Timer for reversing the button press state
+APP_TIMER_DEF(battery_measure_timer);
 uint8_t newdata[3];// register
 
 uint8_t BTN_PRS[1];// Button press indication, idle=0, pressed=1
-uint8_t FIN_DATA[9];// Overall data packet ready to send
+uint8_t FIN_DATA[10];// Overall data packet ready to send
+uint8_t BATT_LVL;
+
+bool bAdvertiseEnabled = false;
 
 void btn_state_update(int newValue)
 {
@@ -88,6 +105,7 @@ void data_ary_append(void)
     
     memcpy(total,       UUID_ADV,    8 * sizeof(UUID_ADV));
     memcpy(total + 8,   BTN_PRS,     1 * sizeof(BTN_PRS));
+    memcpy(total + 9,   &BATT_LVL,   1 * sizeof(BATT_LVL));
 
     memcpy(FIN_DATA, total, sizeof(FIN_DATA));
     free(total);
@@ -193,6 +211,8 @@ static void advertising_start(void)
 
     err_code = bsp_indication_set(BSP_INDICATE_ADVERTISING);
     APP_ERROR_CHECK(err_code);
+
+    bAdvertiseEnabled = true;
 }
 
 
@@ -233,10 +253,15 @@ static void bsp_event_handler(bsp_event_t event)
             //LEDS_INVERT(BSP_LED_1);
             // Change button to "pressed"
             btn_state_update(1);
-            sd_ble_gap_adv_stop(NULL);// Stop the advertising first
-            advertising_init();// Refresh the advertising data, but not yet broadcasted
-            advertising_start();// Resume the advertising action
 
+            if(bAdvertiseEnabled){
+                sd_ble_gap_adv_stop(NULL);// Stop the advertising first
+                bAdvertiseEnabled = false;
+
+                advertising_init();// Refresh the advertising data, but not yet broadcasted
+
+                advertising_start();// Resume the advertising action
+            }
             // Timer for inverting button state
             err_code = app_timer_start(btn_state_timer, APP_TIMER_TICKS(5000), NULL);
             APP_ERROR_CHECK(err_code);
@@ -274,12 +299,63 @@ static void btn_state_handler(void * p_context)
     btn_state_update(0);
    // LEDS_INVERT(BSP_LED_1);
 
-    // STOP
-    sd_ble_gap_adv_stop(NULL);
-    // UPDATE
-    advertising_init();
-    // RESUME
-    advertising_start();
+    if(bAdvertiseEnabled){
+        // STOP
+        sd_ble_gap_adv_stop(NULL);
+        bAdvertiseEnabled = false;
+
+        // UPDATE
+        advertising_init();
+        // RESUME
+        advertising_start();
+    }
+}
+
+static void battery_measure_voltage(){
+
+    NRF_SAADC->TASKS_CALIBRATEOFFSET = 1;
+    
+    while (NRF_SAADC->EVENTS_CALIBRATEDONE == 0);
+    
+    NRF_SAADC->EVENTS_CALIBRATEDONE = 0;
+    
+    while (NRF_SAADC->STATUS == (SAADC_STATUS_STATUS_Busy <<SAADC_STATUS_STATUS_Pos));
+
+    NRF_SAADC->TASKS_START = 1;
+    
+    while (NRF_SAADC->EVENTS_STARTED == 0);
+    
+    NRF_SAADC->EVENTS_STARTED = 0;
+
+    NRF_SAADC->TASKS_SAMPLE = 1;
+    
+    while (NRF_SAADC->EVENTS_END == 0);
+    
+    NRF_SAADC->EVENTS_END = 0;
+
+    precise_result = (float)result / 4551.1f;
+    BATT_LVL = ((uint8_t)(precise_result*10));
+
+    NRF_SAADC->TASKS_STOP = 1;
+    
+    while (NRF_SAADC->EVENTS_STOPPED == 0);
+
+    NRF_SAADC->EVENTS_STOPPED = 0;  
+}
+
+static void battery_measure_handler(){
+    battery_measure_voltage();
+
+    if(bAdvertiseEnabled){
+        // STOP
+        sd_ble_gap_adv_stop(NULL);
+        bAdvertiseEnabled = false;
+        
+        // UPDATE
+        advertising_init();
+        // RESUME
+        advertising_start();
+    }
 }
 
 /**@brief Function for initializing timers. */
@@ -290,6 +366,9 @@ static void timers_init(void)
 
     // Create a timer for handling button state, will reverse the btn_state back to normal
     err_code = app_timer_create(&btn_state_timer, APP_TIMER_MODE_SINGLE_SHOT, btn_state_handler);
+    APP_ERROR_CHECK(err_code);
+ 
+    err_code = app_timer_create(&battery_measure_timer, APP_TIMER_MODE_REPEATED, battery_measure_handler);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -333,9 +412,9 @@ void ble_mac_addr_modify(bool change)
    
     addr.addr_type     = BLE_GAP_ADDR_TYPE_RANDOM_STATIC;
     // The address will display as [5]:[4]:[3]:[2]:[1]:[0]
-    addr.addr[0]       = 0xf2;
-    addr.addr[1]       = 0xb5;
-    addr.addr[2]       = 0x05;
+    addr.addr[0]       = 0xf4;
+    addr.addr[1]       = 0xd9;
+    addr.addr[2]       = 0x02;
     addr.addr[3]       = 0x00;
     addr.addr[4]       = 0x0f;
     addr.addr[5]       = 0xc1;
@@ -363,37 +442,37 @@ static void set_tx_power()
     APP_ERROR_CHECK(err_code);
 }
 
+ void battery_measure_init(){
 
-void read_mac_from_flash(bool flash)
-{
-  if(flash)
-  {
-     /*************read mac form flash**************请勿修改*/
-	uint32_t err_code;
-	ble_gap_addr_t addr;
-	err_code = sd_ble_gap_addr_get(&addr);
-        APP_ERROR_CHECK(err_code);
-	/*NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
-                     addr.addr[5], addr.addr[4],\
-                     addr.addr[3], addr.addr[2],\
-                     addr.addr[1], addr.addr[0]);
-        */
-	uint16_t temp[2];
-	temp[0] = ((*(uint32_t *)0x00072000) & 0x0000FFFF);
-	temp[1] = ((*(uint32_t *)0x00072020) & 0x0000FFFF);
-	addr.addr[3] = temp[0]  >> 8;
-	addr.addr[2] = temp[0] & 0xFF;
-	addr.addr[4] = temp[1] & 0xFF;
-	addr.addr[5] = 0xC1;
-	err_code = sd_ble_gap_addr_set(&addr);
-        APP_ERROR_CHECK(err_code);
-        /*NRF_LOG_INFO("%02X:%02X:%02X:%02X:%02X:%02X",\
-                     addr.addr[5], addr.addr[4],\
-                     addr.addr[3], addr.addr[2],\
-                     addr.addr[1], addr.addr[0]);
-        */
-/**********************************************/
-  }
+    NRF_CLOCK->TASKS_HFCLKSTART = 1;
+    
+    while (NRF_CLOCK->EVENTS_HFCLKSTARTED == 0);
+    
+    NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
+
+
+    NRF_SAADC->CH[0].CONFIG = (SAADC_CH_CONFIG_GAIN_Gain1_6    << SAADC_CH_CONFIG_GAIN_Pos) |
+    (SAADC_CH_CONFIG_MODE_SE         << SAADC_CH_CONFIG_MODE_Pos) |
+    (SAADC_CH_CONFIG_REFSEL_Internal << SAADC_CH_CONFIG_REFSEL_Pos) |
+    (SAADC_CH_CONFIG_RESN_Bypass     << SAADC_CH_CONFIG_RESN_Pos) |
+    (SAADC_CH_CONFIG_RESP_Bypass     << SAADC_CH_CONFIG_RESP_Pos) |
+    (SAADC_CH_CONFIG_TACQ_3us        << SAADC_CH_CONFIG_TACQ_Pos);
+
+    NRF_SAADC->CH[0].PSELP = SAADC_CH_PSELP_PSELP_VDD << SAADC_CH_PSELP_PSELP_Pos;
+    NRF_SAADC->CH[0].PSELN = SAADC_CH_PSELN_PSELN_NC << SAADC_CH_PSELN_PSELN_Pos;
+
+    NRF_SAADC->RESOLUTION = SAADC_RESOLUTION_VAL_14bit << SAADC_RESOLUTION_VAL_Pos;
+
+    NRF_SAADC->RESULT.MAXCNT = 1;
+    NRF_SAADC->RESULT.PTR = (uint32_t)&result;
+
+    NRF_SAADC->SAMPLERATE = SAADC_SAMPLERATE_MODE_Task << SAADC_SAMPLERATE_MODE_Pos;
+
+    NRF_SAADC->ENABLE = SAADC_ENABLE_ENABLE_Enabled << SAADC_ENABLE_ENABLE_Pos;
+
+
+    ret_code_t err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(86400000), NULL);
+    APP_ERROR_CHECK(err_code);
 }
 
 /**
@@ -404,14 +483,15 @@ int main(void)
     // Initialize.
     //log_init();
     timers_init();
+    battery_measure_init();
+
+    battery_measure_voltage();
+
     bsps_init();
     power_management_init();
     ble_stack_init();
-	
-    // Either one should be true
-    ble_mac_addr_modify(true);// For test flashing
-    //read_mac_from_flash(false);// For batch flashing
 
+    ble_mac_addr_modify(true);
     
     advertising_init();
     set_tx_power();
@@ -427,7 +507,3 @@ int main(void)
     }
 }
 
-
-/**
- * @}
- */
