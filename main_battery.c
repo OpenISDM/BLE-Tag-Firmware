@@ -65,6 +65,18 @@
 volatile int16_t result = 0;
 volatile float precise_result = 0;
 
+// The default value of APP_TIMER_CONFIG_RTC_FREQUENCY is 0 which leads the 
+// maximum app timer to be < 512 seconds. The reasons is that Nordic register
+// uses 24-bit and each second contains 32768 (=2^15) ticks, so the app timer
+// supports only 2^(24-15)=2^9=512 seconds. 
+// 
+// To support longer app timer, we should adjust the app timer prescaler. It 
+// was called APP_TIMER_PRESCALER in previous versions, and it is called 
+// APP_TIMER_CONFIG_RTC_FREQUENCY in current version. For details, please 
+// refer to the definition of APP_TIMER_TICKS() function defined in app_timer.h
+//
+#define APP_TIMER_CONFIG_RTC_FREQUENCY 3
+
 #define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
 #define NON_CONNECTABLE_ADV_INTERVAL    MSEC_TO_UNITS(1000, UNIT_0_625_MS)  /**< The advertising interval for non-connectable advertisement (100 ms). This value can vary between 100ms to 10.24s). */
@@ -87,6 +99,14 @@ uint8_t FIN_DATA[10];// Overall data packet ready to send
 uint8_t BATT_LVL;
 
 bool bAdvertiseEnabled = false;
+
+static void lfclk_request(void)
+{
+    ret_code_t err_code = nrf_drv_clock_init();
+    APP_ERROR_CHECK(err_code);
+    nrf_drv_clock_lfclk_request(NULL);
+
+}
 
 void btn_state_update(int newValue)
 {
@@ -257,13 +277,14 @@ static void bsp_event_handler(bsp_event_t event)
             if(bAdvertiseEnabled){
                 sd_ble_gap_adv_stop(NULL);// Stop the advertising first
                 bAdvertiseEnabled = false;
-
-                advertising_init();// Refresh the advertising data, but not yet broadcasted
-
-                advertising_start();// Resume the advertising action
             }
+
+            advertising_init();// Refresh the advertising data, but not yet broadcasted
+
+            advertising_start();// Resume the advertising action
+            
             // Timer for inverting button state
-            err_code = app_timer_start(btn_state_timer, APP_TIMER_TICKS(5000), NULL);
+            err_code = app_timer_start(btn_state_timer, APP_TIMER_TICKS(1800000), NULL);
             APP_ERROR_CHECK(err_code);
             break;
 
@@ -303,12 +324,12 @@ static void btn_state_handler(void * p_context)
         // STOP
         sd_ble_gap_adv_stop(NULL);
         bAdvertiseEnabled = false;
-
-        // UPDATE
-        advertising_init();
-        // RESUME
-        advertising_start();
     }
+
+    // UPDATE
+    advertising_init();
+    // RESUME
+    advertising_start();
 }
 
 static void battery_measure_voltage(){
@@ -344,18 +365,18 @@ static void battery_measure_voltage(){
 }
 
 static void battery_measure_handler(){
+
     battery_measure_voltage();
 
     if(bAdvertiseEnabled){
         // STOP
         sd_ble_gap_adv_stop(NULL);
         bAdvertiseEnabled = false;
-        
-        // UPDATE
-        advertising_init();
-        // RESUME
-        advertising_start();
-    }
+    }    
+    // UPDATE
+    advertising_init();
+    // RESUME
+    advertising_start();
 }
 
 /**@brief Function for initializing timers. */
@@ -471,7 +492,7 @@ static void set_tx_power()
     NRF_SAADC->ENABLE = SAADC_ENABLE_ENABLE_Enabled << SAADC_ENABLE_ENABLE_Pos;
 
 
-    ret_code_t err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(86400000), NULL);
+    ret_code_t err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(300000), NULL);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -480,6 +501,7 @@ static void set_tx_power()
  */
 int main(void)
 {
+    lfclk_request();
     // Initialize.
     //log_init();
     timers_init();
