@@ -284,7 +284,7 @@ static void bsp_event_handler(bsp_event_t event)
             advertising_start();// Resume the advertising action
             
             // Timer for inverting button state
-            err_code = app_timer_start(btn_state_timer, APP_TIMER_TICKS(1800000), NULL);
+            err_code = app_timer_start(btn_state_timer, APP_TIMER_TICKS(5000), NULL);
             APP_ERROR_CHECK(err_code);
             break;
 
@@ -492,7 +492,7 @@ static void set_tx_power()
     NRF_SAADC->ENABLE = SAADC_ENABLE_ENABLE_Enabled << SAADC_ENABLE_ENABLE_Pos;
 
 
-    ret_code_t err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(300000), NULL);
+    ret_code_t err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(1800000), NULL);
     APP_ERROR_CHECK(err_code);
 }
 
