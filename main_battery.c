@@ -223,6 +223,9 @@ static void advertising_init(void)
 
     err_code = sd_ble_gap_adv_set_configure(&m_adv_handle, &m_adv_data, &m_adv_params);
     APP_ERROR_CHECK(err_code);
+    
+    err_code = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, NULL, 0);
+    APP_ERROR_CHECK(err_code);
 }
 
 
@@ -338,16 +341,8 @@ static void btn_state_handler(void * p_context)
     advertising_start();
 }
 
-void battery_measure_init(){
+static void battery_measure_voltage(){
 
-/*
-    NRF_CLOCK->TASKS_HFCLKSTART = 1;
-    
-    while (NRF_CLOCK->EVENTS_HFCLKSTARTED == 0);
-    
-    NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
-*/
-    // Configure SAADC singled-ended channel, Iternal referecne (0.6V) and 1/6 gain.
     NRF_SAADC->CH[0].CONFIG = 
     (SAADC_CH_CONFIG_GAIN_Gain1_6    << SAADC_CH_CONFIG_GAIN_Pos) |
     (SAADC_CH_CONFIG_MODE_SE         << SAADC_CH_CONFIG_MODE_Pos) |
@@ -373,11 +368,6 @@ void battery_measure_init(){
     NRF_SAADC->ENABLE = SAADC_ENABLE_ENABLE_Enabled << SAADC_ENABLE_ENABLE_Pos;
 
 
-    ret_code_t err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(1800000), NULL);
-    APP_ERROR_CHECK(err_code);
-}
-
-static void battery_measure_voltage(){
 
     // Calibrate the SAADC (only needs to be done once in a while)
     NRF_SAADC->TASKS_CALIBRATEOFFSET = 1;
@@ -411,6 +401,13 @@ static void battery_measure_voltage(){
     while (NRF_SAADC->EVENTS_STOPPED == 0);
 
     NRF_SAADC->EVENTS_STOPPED = 0;  
+    
+    NRF_SAADC->ENABLE = 0;
+    NRF_SAADC->INTENCLR = (SAADC_INTENCLR_END_Clear << SAADC_INTENCLR_END_Pos);
+
+    NVIC_DisableIRQ( SAADC_IRQn );
+    NVIC_ClearPendingIRQ(SAADC_IRQn);
+      
 }
 
 static void battery_measure_handler(){
@@ -439,6 +436,9 @@ static void timers_init(void)
     APP_ERROR_CHECK(err_code);
  
     err_code = app_timer_create(&battery_measure_timer, APP_TIMER_MODE_REPEATED, battery_measure_handler);
+    APP_ERROR_CHECK(err_code);
+
+    err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(600000), NULL);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -502,16 +502,6 @@ void ble_mac_addr_modify(bool change)
     */
 }
 
-
-static void set_tx_power()
-{
-    ret_code_t err_code;
-
-    // Accepted values are -40, -20, -16, -12, -8, -4, 0, 4 (dbm)
-    err_code = sd_ble_gap_tx_power_set(BLE_GAP_TX_POWER_ROLE_ADV, NULL, 0);
-    APP_ERROR_CHECK(err_code);
-}
-
 /**
  * @brief Function for application main entry.
  */
@@ -521,8 +511,7 @@ int main(void)
     // Initialize.
     //log_init();
     timers_init();
-    battery_measure_init();
-
+    
     battery_measure_voltage();
 
     bsps_init();
@@ -532,8 +521,7 @@ int main(void)
     ble_mac_addr_modify(true);
     
     advertising_init();
-    set_tx_power();
-
+  
     // Start execution.
     //NRF_LOG_INFO("Beacon example started.");
     advertising_start();
