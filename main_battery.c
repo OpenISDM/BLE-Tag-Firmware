@@ -95,7 +95,7 @@ APP_TIMER_DEF(battery_measure_timer);
 uint8_t newdata[3];// register
 
 uint8_t BTN_PRS[1];// Button press indication, idle=0, pressed=1
-uint8_t FIN_DATA[10];// Overall data packet ready to send
+uint8_t FINAL_DATA[4];// Overall data packet ready to send
 uint8_t BATT_LVL;
 
 bool bAdvertiseEnabled = false;
@@ -118,16 +118,22 @@ void btn_state_update(int newValue)
 
 void data_ary_append(void)
 {
-    uint8_t* total = malloc(9 * sizeof(char));
+    uint8_t* total = malloc(4 * sizeof(char));
 
-    uint8_t UUID_ADV[8];
-    memset(UUID_ADV, 0, sizeof UUID_ADV);
+    // Use 0x1478 as our identifier
+    uint8_t IDENTIFIER_ADV[2];
+    memset(IDENTIFIER_ADV, 0, sizeof IDENTIFIER_ADV);
+
+    // 1478 (0x05C6) 
+    IDENTIFIER_ADV[0] = (uint8_t)5;
+    IDENTIFIER_ADV[1] = (uint8_t)198;
     
-    memcpy(total,       UUID_ADV,    8 * sizeof(UUID_ADV));
-    memcpy(total + 8,   BTN_PRS,     1 * sizeof(BTN_PRS));
-    memcpy(total + 9,   &BATT_LVL,   1 * sizeof(BATT_LVL));
+    memcpy(total,       IDENTIFIER_ADV,    2 * sizeof(IDENTIFIER_ADV));
+ 
+    memcpy(total + 2,   BTN_PRS,     1 * sizeof(BTN_PRS));
+    memcpy(total + 3,   &BATT_LVL,   1 * sizeof(BATT_LVL));
 
-    memcpy(FIN_DATA, total, sizeof(FIN_DATA));
+    memcpy(FINAL_DATA, total, sizeof(FINAL_DATA));
     free(total);
 
     // DEBUG CONSOLE
@@ -193,8 +199,8 @@ static void advertising_init(void)
     manuf_specific_data.company_identifier = APP_COMPANY_IDENTIFIER;
 
     data_ary_append(); // Build the data array
-    manuf_specific_data.data.p_data = FIN_DATA;
-    manuf_specific_data.data.size   = sizeof(FIN_DATA);
+    manuf_specific_data.data.p_data = FINAL_DATA;
+    manuf_specific_data.data.size   = sizeof(FINAL_DATA);
 
     // Build and set advertising data.
     memset(&advdata, 0, sizeof(advdata));
