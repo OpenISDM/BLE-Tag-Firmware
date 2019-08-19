@@ -75,7 +75,7 @@ volatile float precise_result = 0;
 // APP_TIMER_CONFIG_RTC_FREQUENCY in current version. For details, please 
 // refer to the definition of APP_TIMER_TICKS() function defined in app_timer.h
 //
-#define APP_TIMER_CONFIG_RTC_FREQUENCY 3
+#define APP_TIMER_CONFIG_RTC_FREQUENCY 0
 
 #define APP_BLE_CONN_CFG_TAG            1                                  /**< A tag identifying the SoftDevice BLE configuration. */
 
@@ -438,7 +438,7 @@ static void timers_init(void)
     err_code = app_timer_create(&battery_measure_timer, APP_TIMER_MODE_REPEATED, battery_measure_handler);
     APP_ERROR_CHECK(err_code);
 
-    err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(600000), NULL);
+    err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(1000), NULL);
     APP_ERROR_CHECK(err_code);
 }
 
