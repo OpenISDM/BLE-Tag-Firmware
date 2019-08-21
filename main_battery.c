@@ -92,11 +92,11 @@ static uint8_t              m_enc_advdata[BLE_GAP_ADV_SET_DATA_SIZE_MAX];  /**< 
 /*Customized Data Generating*/
 APP_TIMER_DEF(btn_state_timer);// Timer for reversing the button press state
 APP_TIMER_DEF(battery_measure_timer);
-uint8_t newdata[3];// register
 
-uint8_t BTN_PRS[1];// Button press indication, idle=0, pressed=1
+uint8_t BTN_PRS;// Button press indication, idle=0, pressed=1
 uint8_t FINAL_DATA[4];// Overall data packet ready to send
 uint8_t BATT_LVL;
+uint8_t NEW_BATT_LVL;
 
 bool bAdvertiseEnabled = false;
 
@@ -110,32 +110,29 @@ static void lfclk_request(void)
 
 void btn_state_update(int newValue)
 {
-    uint8_t data[1];
-    data[0] = newValue;
-    
-    memcpy(BTN_PRS, data, sizeof(BTN_PRS));
+    BTN_PRS = (uint8_t)newValue;
 }
 
 void data_ary_append(void)
 {
-    uint8_t* total = malloc(4 * sizeof(char));
+    uint8_t total[4];
+    memset(total, 0, sizeof(total));
 
     // Use 0x1478 as our identifier
     uint8_t IDENTIFIER_ADV[2];
-    memset(IDENTIFIER_ADV, 0, sizeof IDENTIFIER_ADV);
+    memset(IDENTIFIER_ADV, 0, sizeof(IDENTIFIER_ADV));
 
     // 1478 (0x05C6) 
     IDENTIFIER_ADV[0] = (uint8_t)5;
     IDENTIFIER_ADV[1] = (uint8_t)198;
     
-    memcpy(total,       IDENTIFIER_ADV,    2 * sizeof(IDENTIFIER_ADV));
+    memcpy(total, IDENTIFIER_ADV, sizeof(IDENTIFIER_ADV));
  
-    memcpy(total + 2,   BTN_PRS,     1 * sizeof(BTN_PRS));
-    memcpy(total + 3,   &BATT_LVL,   1 * sizeof(BATT_LVL));
+    memcpy(total + 2,   &BTN_PRS,     1 * sizeof(BTN_PRS));
+    memcpy(total + 3,   &BATT_LVL,    1 * sizeof(BATT_LVL));
 
     memcpy(FINAL_DATA, total, sizeof(FINAL_DATA));
-    free(total);
-
+    
     // DEBUG CONSOLE
     /*
     NRF_LOG_INFO("BPS_DIA=%d%d%d\r",    BPS_DIA[0], BPS_DIA[1], BPS_DIA[2]);
@@ -245,6 +242,19 @@ static void advertising_start(void)
 }
 
 
+static void renew_advertising(void)
+{
+    if(bAdvertiseEnabled){
+        // STOP
+        sd_ble_gap_adv_stop(NULL);
+        bAdvertiseEnabled = false;
+    }    
+    // UPDATE
+    advertising_init();
+    // RESUME
+    advertising_start();  
+}
+
 /**@brief Function for initializing the BLE stack.
  *
  * @details Initializes the SoftDevice and the BLE event interrupt.
@@ -282,16 +292,9 @@ static void bsp_event_handler(bsp_event_t event)
             //LEDS_INVERT(BSP_LED_1);
             // Change button to "pressed"
             btn_state_update(1);
-
-            if(bAdvertiseEnabled){
-                sd_ble_gap_adv_stop(NULL);// Stop the advertising first
-                bAdvertiseEnabled = false;
-            }
-
-            advertising_init();// Refresh the advertising data, but not yet broadcasted
-
-            advertising_start();// Resume the advertising action
             
+            renew_advertising ();
+
             // Timer for inverting button state
             err_code = app_timer_start(btn_state_timer, APP_TIMER_TICKS(5000), NULL);
             APP_ERROR_CHECK(err_code);
@@ -327,22 +330,24 @@ static void btn_state_handler(void * p_context)
 {   
     UNUSED_PARAMETER(p_context);
     btn_state_update(0);
+
    // LEDS_INVERT(BSP_LED_1);
 
-    if(bAdvertiseEnabled){
-        // STOP
-        sd_ble_gap_adv_stop(NULL);
-        bAdvertiseEnabled = false;
-    }
-
-    // UPDATE
-    advertising_init();
-    // RESUME
-    advertising_start();
+    renew_advertising();
 }
 
 static void battery_measure_voltage(){
 
+    /* We commented out this block, since it will causes button state to be recovered 
+       immediately.
+
+    // Start HFCLK from crystal oscillator, this will give the SAADC higher accuracy 
+    NRF_CLOCK->TASKS_HFCLKSTART = 1;
+    while (NRF_CLOCK->EVENTS_HFCLKSTARTED == 0);
+    NRF_CLOCK->EVENTS_HFCLKSTARTED = 0;
+    */
+
+    // Configure SAADC singled-ended channel, Internal reference (0.6V) and 1/6 gain.
     NRF_SAADC->CH[0].CONFIG = 
     (SAADC_CH_CONFIG_GAIN_Gain1_6    << SAADC_CH_CONFIG_GAIN_Pos) |
     (SAADC_CH_CONFIG_MODE_SE         << SAADC_CH_CONFIG_MODE_Pos) |
@@ -393,15 +398,15 @@ static void battery_measure_voltage(){
     NRF_SAADC->EVENTS_END = 0;
 
     precise_result = (float)result / 4551.1f;
-    BATT_LVL = ((uint8_t)(precise_result*10));
-
+    NEW_BATT_LVL = ((uint8_t)(precise_result*10));
+    
     // Stop the SAADC, since it is not used anymore.
     NRF_SAADC->TASKS_STOP = 1;
     
     while (NRF_SAADC->EVENTS_STOPPED == 0);
 
     NRF_SAADC->EVENTS_STOPPED = 0;  
-    
+   
     NRF_SAADC->ENABLE = 0;
     NRF_SAADC->INTENCLR = (SAADC_INTENCLR_END_Clear << SAADC_INTENCLR_END_Pos);
 
@@ -414,15 +419,13 @@ static void battery_measure_handler(){
 
     battery_measure_voltage();
 
-    if(bAdvertiseEnabled){
-        // STOP
-        sd_ble_gap_adv_stop(NULL);
-        bAdvertiseEnabled = false;
-    }    
-    // UPDATE
-    advertising_init();
-    // RESUME
-    advertising_start();
+    if(BATT_LVL != NEW_BATT_LVL){
+
+        BATT_LVL = NEW_BATT_LVL; 
+        renew_advertising();
+
+    }
+
 }
 
 /**@brief Function for initializing timers. */
@@ -438,7 +441,7 @@ static void timers_init(void)
     err_code = app_timer_create(&battery_measure_timer, APP_TIMER_MODE_REPEATED, battery_measure_handler);
     APP_ERROR_CHECK(err_code);
 
-    err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(1000), NULL);
+    err_code = app_timer_start(battery_measure_timer, APP_TIMER_TICKS(180000), NULL);
     APP_ERROR_CHECK(err_code);
 }
 
@@ -513,6 +516,7 @@ int main(void)
     timers_init();
     
     battery_measure_voltage();
+    BATT_LVL = NEW_BATT_LVL;
 
     bsps_init();
     power_management_init();
@@ -520,16 +524,12 @@ int main(void)
 
     ble_mac_addr_modify(true);
     
-    advertising_init();
-  
-    // Start execution.
-    //NRF_LOG_INFO("Beacon example started.");
-    advertising_start();
+    renew_advertising();
 
     // Enter main loop.
     for (;; )
     {
-        idle_state_handle();
+        idle_state_handle();   
     }
 }
 
