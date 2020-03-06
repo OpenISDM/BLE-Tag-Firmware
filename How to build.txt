@@ -16,4 +16,4 @@ Steps to build project
 Steps to build firmware onto nRF52832
 1. Connect PC with J-link
 2. Connect J-link to nRF52832 button tag
-3. Burn the firmware onto nRF52832
+3. Burn the firmware onto nRF52832  
