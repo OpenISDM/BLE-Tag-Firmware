@@ -1,5 +1,4 @@
 Steps to prepare nRF SDK:
-
 1. Download nRF5_SDK_15.0.0_a53641a.zip from internet
 2. Copy nRF5_SDK_15.0.0_a53641a.zip to D:\
 2. Unzip the SDK to D:\nRF5_SDK_15.0.0_a53641a\ folder
