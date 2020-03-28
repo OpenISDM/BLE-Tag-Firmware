@@ -4,8 +4,9 @@ Steps to prepare nRF SDK:
 2. Unzip the SDK to D:\nRF5_SDK_15.0.0_a53641a\ folder
 
 Steps to prepare BiDaE project
-1. Copy the whole folder of BeDITech_ble_app_beacon from GitHub to under D:\nRF5_SDK_15.0.0_a53641a\nRF5_SDK_15.0.0_a53641a\examples\ble_peripheral\ folder
-2. Open the project file under 
+1. Copy the whole folder of "BeDITech_ble_app_beacon" from GitHub to under D:\nRF5_SDK_15.0.0_a53641a\nRF5_SDK_15.0.0_a53641a\examples\ble_peripheral\ folder
+2. Copy the whole files under "boards" folder from GitHub to under D:\nRF5_SDK_15.0.0_a53641a\nRF5_SDK_15.0.0_a53641a\components\boards\ folder
+3. Open the project file under 
    D:\nRF5_SDK_15.0.0_a53641a\nRF5_SDK_15.0.0_a53641a\examples\ble_peripheral\BeDITech_ble_app_beacon\pca10040\s132\ses\ble_app_beacon_pca10040_s132.emProject
 
 Steps to build project
@@ -16,3 +17,7 @@ Steps to build firmware onto nRF52832
 1. Connect PC with J-link
 2. Connect J-link to nRF52832 button tag
 3. Burn the firmware onto nRF52832  
+
+Steps to verify the tag
+1. Check advertising payload
+2. Press the button and verify the advertising payload
