@@ -50,7 +50,7 @@ extern "C" {
 #define LEDS_NUMBER    4
 
 #define LED_START      17
-#define LED_1          19 //17
+#define LED_1          17
 #define LED_2          18
 #define LED_3          19
 #define LED_4          20
@@ -70,12 +70,12 @@ extern "C" {
 #define BUTTONS_NUMBER 4
 
 #define BUTTON_START   13
-#define BUTTON_1       11 //13
+#define BUTTON_1       11
 #define BUTTON_2       14
 #define BUTTON_3       15
 #define BUTTON_4       16
 #define BUTTON_STOP    16
-#define BUTTON_PULL    NRF_GPIO_PIN_PULLUP
+#define BUTTON_PULL    NRF_GPIO_PIN_PULLDOWN
 
 #define BUTTONS_ACTIVE_STATE 0
 
